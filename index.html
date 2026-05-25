@@ -4,7 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>บันทึกปัญหา AGV</title>
-<script src="./jsQR.min.js"></script>
+<script src="jsQR.js"></script>
+
+<script>
+window.onload = () => {
+  console.log("jsQR =", typeof jsQR);
+
+  if (typeof jsQR === "undefined") {
+    alert("โหลด jsQR ไม่สำเร็จ");
+  } else {
+    console.log("โหลด jsQR สำเร็จ");
+  }
+};
+</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
