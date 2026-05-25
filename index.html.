@@ -1,0 +1,489 @@
+<script src="jsQR.js"></script>
+
+<script>
+/* =========================
+   AGV SYSTEM
+========================= */
+
+let records = JSON.parse(localStorage.getItem('agv_records') || '[]');
+
+let photoBefore = [];
+let photoAfter = [];
+
+let scanning = false;
+let videoStream = null;
+
+/* =========================
+   INIT
+========================= */
+
+window.onload = () => {
+
+  console.log("jsQR =", typeof jsQR);
+
+  if (typeof jsQR === "undefined") {
+    alert("โหลด jsQR ไม่สำเร็จ\n\nตรวจสอบว่าไฟล์ jsQR.js อยู่โฟลเดอร์เดียวกับ index.html");
+  }
+
+  const today = new Date();
+
+  document.getElementById('repair-date').value =
+    today.toISOString().split('T')[0];
+
+  document.getElementById('week').value =
+    'W' + getWeek(today);
+
+  updateCount();
+};
+
+function getWeek(date) {
+
+  const firstDay = new Date(date.getFullYear(), 0, 1);
+
+  const pastDays =
+    (date - firstDay) / 86400000;
+
+  return String(
+    Math.ceil((pastDays + firstDay.getDay() + 1) / 7)
+  ).padStart(2, '0');
+}
+
+/* =========================
+   TOAST
+========================= */
+
+let toastTimer;
+
+function showToast(msg, type = '') {
+
+  const toast = document.getElementById('toast');
+
+  toast.textContent = msg;
+
+  toast.className = 'show ' + type;
+
+  clearTimeout(toastTimer);
+
+  toastTimer = setTimeout(() => {
+    toast.className = '';
+  }, 3000);
+}
+
+/* =========================
+   SCAN QR
+========================= */
+
+async function startScan() {
+
+  if (scanning) return;
+
+  if (typeof jsQR === 'undefined') {
+
+    showToast('โหลด jsQR ไม่สำเร็จ', 'error');
+
+    return;
+  }
+
+  try {
+
+    const stream =
+      await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment'
+        }
+      });
+
+    videoStream = stream;
+
+    const video =
+      document.getElementById('qr-video');
+
+    video.srcObject = stream;
+
+    await video.play();
+
+    video.style.display = 'block';
+
+    document.getElementById('scan-overlay').style.display = 'none';
+
+    document.getElementById('scan-frame').style.display = 'block';
+
+    document.getElementById('btn-open-cam').style.display = 'none';
+
+    document.getElementById('btn-stop').style.display = 'flex';
+
+    scanning = true;
+
+    scanLoop();
+
+    showToast('เปิดกล้องสำเร็จ', 'success');
+
+  } catch (err) {
+
+    console.log(err);
+
+    showToast('เปิดกล้องไม่ได้', 'error');
+  }
+}
+
+function scanLoop() {
+
+  if (!scanning) return;
+
+  const video =
+    document.getElementById('qr-video');
+
+  if (video.readyState !== 4) {
+
+    requestAnimationFrame(scanLoop);
+
+    return;
+  }
+
+  const canvas =
+    document.getElementById('scan-canvas');
+
+  const ctx =
+    canvas.getContext('2d');
+
+  canvas.width = video.videoWidth;
+
+  canvas.height = video.videoHeight;
+
+  ctx.drawImage(
+    video,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const imageData =
+    ctx.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+  const code = jsQR(
+    imageData.data,
+    imageData.width,
+    imageData.height
+  );
+
+  if (code) {
+
+    document.getElementById('barcode').value =
+      code.data;
+
+    document.getElementById('agv-number').value =
+      code.data;
+
+    if (navigator.vibrate) {
+      navigator.vibrate(200);
+    }
+
+    showToast(
+      'สแกนสำเร็จ : ' + code.data,
+      'success'
+    );
+
+    stopScan();
+
+    return;
+  }
+
+  requestAnimationFrame(scanLoop);
+}
+
+function stopScan() {
+
+  scanning = false;
+
+  if (videoStream) {
+
+    videoStream.getTracks().forEach(track => {
+      track.stop();
+    });
+  }
+
+  const video =
+    document.getElementById('qr-video');
+
+  video.srcObject = null;
+
+  video.style.display = 'none';
+
+  document.getElementById('scan-overlay').style.display = 'flex';
+
+  document.getElementById('scan-frame').style.display = 'none';
+
+  document.getElementById('btn-open-cam').style.display = 'flex';
+
+  document.getElementById('btn-stop').style.display = 'none';
+}
+
+/* =========================
+   OTHER INPUT
+========================= */
+
+function toggleOther(id, cb) {
+
+  const box = document.getElementById(id);
+
+  if (cb.checked) {
+    box.classList.add('visible');
+  } else {
+    box.classList.remove('visible');
+  }
+}
+
+/* =========================
+   PHOTO
+========================= */
+
+function takeCamPhoto(type) {
+
+  document.getElementById(
+    'cam-' + type
+  ).click();
+}
+
+function handleFiles(input, type) {
+
+  const files = Array.from(input.files);
+
+  files.forEach(file => {
+
+    const reader = new FileReader();
+
+    reader.onload = e => {
+
+      addPhoto(
+        type,
+        file.name,
+        e.target.result
+      );
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+function addPhoto(type, name, dataUrl) {
+
+  const arr =
+    type === 'before'
+      ? photoBefore
+      : photoAfter;
+
+  arr.push({
+    name,
+    dataUrl
+  });
+
+  renderPreview(type);
+}
+
+function renderPreview(type) {
+
+  const arr =
+    type === 'before'
+      ? photoBefore
+      : photoAfter;
+
+  const preview =
+    document.getElementById(
+      'preview-' + type
+    );
+
+  preview.innerHTML = '';
+
+  arr.forEach((img, i) => {
+
+    preview.innerHTML += `
+      <div class="preview-thumb">
+        <img src="${img.dataUrl}">
+        <button class="rm"
+          onclick="removePhoto('${type}',${i})">
+          ×
+        </button>
+      </div>
+    `;
+  });
+}
+
+function removePhoto(type, index) {
+
+  if (type === 'before') {
+    photoBefore.splice(index, 1);
+  } else {
+    photoAfter.splice(index, 1);
+  }
+
+  renderPreview(type);
+}
+
+/* =========================
+   SAVE
+========================= */
+
+function submitForm() {
+
+  const agv =
+    document.getElementById('agv-number').value;
+
+  if (!agv) {
+
+    showToast('กรุณากรอก AGV', 'error');
+
+    return;
+  }
+
+  const row = {
+
+    date:
+      document.getElementById('repair-date').value,
+
+    agv,
+
+    problem:
+      document.getElementById('detail').value,
+
+    cause:
+      document.getElementById('cause').value,
+
+    solution:
+      document.getElementById('solution').value,
+
+    station:
+      document.getElementById('station').value,
+
+    before:
+      photoBefore.length,
+
+    after:
+      photoAfter.length
+  };
+
+  records.push(row);
+
+  localStorage.setItem(
+    'agv_records',
+    JSON.stringify(records)
+  );
+
+  updateCount();
+
+  exportCSV();
+
+  showToast(
+    'บันทึกสำเร็จ',
+    'success'
+  );
+
+  resetForm();
+}
+
+/* =========================
+   CSV
+========================= */
+
+function exportCSV() {
+
+  let csv =
+    'Date,AGV,Problem,Cause,Solution,Station,Before,After\n';
+
+  records.forEach(r => {
+
+    csv +=
+`${r.date},
+${r.agv},
+"${r.problem}",
+"${r.cause}",
+"${r.solution}",
+"${r.station}",
+${r.before},
+${r.after}\n`;
+  });
+
+  const blob =
+    new Blob([csv], {
+      type: 'text/csv'
+    });
+
+  const url =
+    URL.createObjectURL(blob);
+
+  const a =
+    document.createElement('a');
+
+  a.href = url;
+
+  a.download = 'AGV_Report.csv';
+
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function exportAll() {
+
+  exportCSV();
+}
+
+/* =========================
+   RESET
+========================= */
+
+function resetForm() {
+
+  document.getElementById('barcode').value = '';
+
+  document.getElementById('agv-number').value = '';
+
+  document.getElementById('detail').value = '';
+
+  document.getElementById('cause').value = '';
+
+  document.getElementById('solution').value = '';
+
+  document.getElementById('station').value = '';
+
+  photoBefore = [];
+
+  photoAfter = [];
+
+  document.getElementById('preview-before').innerHTML = '';
+
+  document.getElementById('preview-after').innerHTML = '';
+}
+
+/* =========================
+   COUNT
+========================= */
+
+function updateCount() {
+
+  document.getElementById('rec-count').textContent =
+    records.length;
+}
+
+/* =========================
+   CLEAR
+========================= */
+
+function clearAll() {
+
+  if (!confirm('ลบข้อมูลทั้งหมด?')) return;
+
+  records = [];
+
+  localStorage.removeItem('agv_records');
+
+  updateCount();
+
+  showToast('ล้างข้อมูลแล้ว');
+}
+</script>
